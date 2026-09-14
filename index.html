@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <link rel="manifest" href="manifest.json">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cohérence Cardiaque - Multi-Vues</title>
+    <style>
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background-color: #f8fafc;
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            color: #334e68;
+        }
+        .container {
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+            max-width: 800px;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        h1 {
+            font-size: 28px;
+            margin: 0 0 5px 0;
+            color: #102a43;
+        }
+        p.subtitle {
+            margin: 0 0 20px 0;
+            color: #627d98;
+            font-size: 16px;
+        }
+        
+        .view-toggle {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 20px;
+            background: #e2e8f0;
+            padding: 5px;
+            border-radius: 50px;
+        }
+        .view-toggle button {
+            padding: 8px 24px;
+            font-size: 15px;
+            font-weight: 600;
+            background: transparent;
+            color: #627d98;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: none;
+        }
+        .view-toggle button.active {
+            background: #ffffff;
+            color: #102a43;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+
+        .timer {
+            font-size: 54px;
+            font-weight: 300;
+            margin-bottom: 5px;
+            font-variant-numeric: tabular-nums;
+            color: #243b53;
+        }
+        .instruction {
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 25px;
+            height: 35px;
+            color: #486581;
+            transition: color 0.3s;
+        }
+        canvas {
+            background: #ffffff;
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
+            margin-bottom: 30px;
+            max-width: 100%;
+            height: auto;
+        }
+        .controls {
+            display: flex;
+            gap: 15px;
+        }
+        .main-btn {
+            padding: 12px 36px;
+            font-size: 18px;
+            font-weight: 600;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        #startBtn {
+            background-color: #243b53;
+            color: white;
+        }
+        #startBtn:hover {
+            background-color: #102a43;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+        }
+        #startBtn:active {
+            transform: translateY(0);
+        }
+        #startBtn.stop-mode {
+            background-color: #e2e8f0;
+            color: #334e68;
+            box-shadow: none;
+        }
+        #startBtn.stop-mode:hover {
+            background-color: #cbd5e1;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Cohérence Cardiaque</h1>
+        <p class="subtitle">Sélectionnez la visualisation qui vous convient le mieux</p>
+        
+        <div class="view-toggle">
+            <button id="btnWave" class="active">Courbe Continue</button>
+            <button id="btnClock">Horloge & Volume</button>
+        </div>
+
+        <div class="timer" id="timer">05:00</div>
+        <div class="instruction" id="instruction">Prêt ?</div>
+        
+        <canvas id="vizCanvas" width="700" height="250"></canvas>
+        
+        <div class="controls">
+            <button id="startBtn" class="main-btn">Démarrer</button>
+        </div>
+    </div>
+
+    <script>
+        const DURATION = 300; 
+        let timeLeft = DURATION;
+        let timerId = null;
+        let isRunning = false;
+        let startTime = 0;
+        let currentMode = 'wave'; 
+        
+        const timerDisplay = document.getElementById('timer');
+        const instruction = document.getElementById('instruction');
+        const startBtn = document.getElementById('startBtn');
+        const canvas = document.getElementById('vizCanvas');
+        const ctx = canvas.getContext('2d');
+        const btnWave = document.getElementById('btnWave');
+        const btnClock = document.getElementById('btnClock');
+
+        const colorInhale = '#74c69d'; 
+        const colorExhale = '#4ea8de'; 
+
+        btnWave.addEventListener('click', () => {
+            currentMode = 'wave';
+            btnWave.classList.add('active');
+            btnClock.classList.remove('active');
+        });
+
+        btnClock.addEventListener('click', () => {
+            currentMode = 'clock';
+            btnClock.classList.add('active');
+            btnWave.classList.remove('active');
+        });
+
+        function updateDisplay() {
+            const minutes = Math.floor(timeLeft / 60);
+            const seconds = timeLeft % 60;
+            timerDisplay.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        }
+
+        function drawWave(w, h, elapsedMs, isInhale, currentColor) {
+            const amp = h / 2 - 35;
+            const cy = h / 2; 
+            const fixedX = w / 3;
+            const msPerPixel = 10000 / w;
+
+            ctx.beginPath();
+            for (let x = 0; x <= w; x++) {
+                let timeAtX = elapsedMs + (x - fixedX) * msPerPixel;
+                let phase = (timeAtX / 10000) * Math.PI * 2;
+                let y = amp * Math.cos(phase) + cy;
+                
+                if (x === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.strokeStyle = "#e2e8f0";
+            ctx.lineWidth = 4;
+            ctx.stroke();
+
+            if (isRunning) {
+                ctx.beginPath();
+                for (let x = 0; x <= fixedX; x++) {
+                    let timeAtX = elapsedMs + (x - fixedX) * msPerPixel;
+                    let phase = (timeAtX / 10000) * Math.PI * 2;
+                    let y = amp * Math.cos(phase) + cy;
+                    
+                    if (x === 0) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
+                }
+                
+                let grad = ctx.createLinearGradient(0, 0, fixedX, 0);
+                grad.addColorStop(0, "transparent"); 
+                grad.addColorStop(1, currentColor); 
+                
+                ctx.strokeStyle = grad;
+                ctx.lineWidth = 6;
+                ctx.stroke();
+
+                let currentPhase = (elapsedMs / 10000) * Math.PI * 2;
+                let dotY = amp * Math.cos(currentPhase) + cy;
+                
+                let fillRatio = (1 - Math.cos(currentPhase)) / 2;
+                let dynamicRadius = 6 + fillRatio * 20;
+                
+                ctx.beginPath();
+                ctx.arc(fixedX, dotY, dynamicRadius, 0, Math.PI * 2);
+                ctx.fillStyle = currentColor;
+                ctx.shadowColor = currentColor;
+                ctx.shadowBlur = 10 + (fillRatio * 15);
+                ctx.fill();
+                ctx.shadowBlur = 0;
+            }
+        }
+
+        function drawClock(w, h, elapsedMs, isInhale, currentColor) {
+            const cx = w / 2;
+            const cy = h / 2;
+            const radius = Math.min(cx, cy) - 20; 
+            
+            let cycleMs = elapsedMs % 10000;
+            let globalRatio = isRunning ? Math.min(elapsedMs / (DURATION * 1000), 1) : 0;
+
+            // 1. Fond et remplissage global
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(cx, cy, radius - 18, 0, Math.PI * 2);
+            ctx.fillStyle = "#f8fafc";
+            ctx.fill(); 
+            
+            ctx.clip();
+            
+            let fillHeight = (radius - 18) * 2 * globalRatio;
+            ctx.fillStyle = currentColor;
+            ctx.globalAlpha = 0.25; 
+            ctx.fillRect(cx - radius, cy + radius - 18 - fillHeight, radius * 2, fillHeight);
+            ctx.restore();
+            
+            ctx.beginPath();
+            ctx.arc(cx, cy, radius - 18, 0, Math.PI * 2);
+            ctx.strokeStyle = "#e2e8f0";
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // 2. Anneau extérieur
+            ctx.beginPath();
+            ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+            ctx.strokeStyle = "#f1f5f9";
+            ctx.lineWidth = 12;
+            ctx.stroke();
+
+            if (isRunning) {
+                ctx.beginPath();
+                
+                let startAngle, endAngle;
+                
+                if (isInhale) {
+                    // Inspiration : L'angle de départ est fixe (en haut), l'angle de fin avance
+                    let inhaleRatio = cycleMs / 5000;
+                    startAngle = -Math.PI / 2;
+                    endAngle = startAngle + (inhaleRatio * Math.PI * 2);
+                } else {
+                    // Expiration : L'angle de fin est fixe (complet), l'angle de départ avance (poursuite)
+                    let exhaleRatio = (cycleMs - 5000) / 5000;
+                    startAngle = -Math.PI / 2 + (exhaleRatio * Math.PI * 2);
+                    endAngle = -Math.PI / 2 + Math.PI * 2;
+                }
+                
+                // On évite un bug d'affichage Canvas si startAngle est exactement égal à endAngle
+                if (Math.abs(endAngle - startAngle) > 0.01) {
+                    ctx.arc(cx, cy, radius, startAngle, endAngle);
+                    ctx.strokeStyle = currentColor;
+                    ctx.lineWidth = 12;
+                    ctx.lineCap = "butt";
+                    
+                    ctx.shadowColor = currentColor;
+                    ctx.shadowBlur = 10;
+                    ctx.stroke();
+                    ctx.shadowBlur = 0;
+                }
+            }
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            let elapsedMs = isRunning ? Date.now() - startTime : 0;
+            let cycleMs = elapsedMs % 10000; 
+            let isInhale = cycleMs < 5000; 
+            let currentColor = isInhale ? colorInhale : colorExhale;
+
+            if (isRunning) {
+                if (isInhale && instruction.textContent !== 'Inspirer...') {
+                    instruction.textContent = 'Inspirer...';
+                    instruction.style.color = colorInhale;
+                } else if (!isInhale && instruction.textContent !== 'Expirer...') {
+                    instruction.textContent = 'Expirer...';
+                    instruction.style.color = colorExhale;
+                }
+            } else if (instruction.textContent !== 'Prêt ?' && instruction.textContent !== 'Séance terminée !') {
+                instruction.textContent = 'Prêt ?';
+                instruction.style.color = '#334e68';
+            }
+
+            if (currentMode === 'wave') {
+                drawWave(canvas.width, canvas.height, elapsedMs, isInhale, currentColor);
+            } else {
+                drawClock(canvas.width, canvas.height, elapsedMs, isInhale, currentColor);
+            }
+
+            requestAnimationFrame(draw);
+        }
+
+        function tick() {
+            if (timeLeft <= 0) {
+                stopSession();
+                instruction.textContent = 'Séance terminée !';
+                instruction.style.color = '#334e68';
+                return;
+            }
+            timeLeft--;
+            updateDisplay();
+        }
+
+        function toggleSession() {
+            if (isRunning) {
+                stopSession();
+            } else {
+                startSession();
+            }
+        }
+
+        function startSession() {
+            if (timeLeft === 0) timeLeft = DURATION;
+            isRunning = true;
+            startTime = Date.now() - ((DURATION - timeLeft) * 1000); 
+            
+            startBtn.textContent = 'Arrêter';
+            startBtn.classList.add('stop-mode');
+            
+            updateDisplay();
+            timerId = setInterval(tick, 1000);
+        }
+
+        function stopSession() {
+            isRunning = false;
+            clearInterval(timerId);
+            
+            startBtn.textContent = 'Démarrer';
+            startBtn.classList.remove('stop-mode');
+        }
+
+        startBtn.addEventListener('click', toggleSession);
+        
+        updateDisplay();
+        draw(); 
+    </script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js');
+            });
+        }
+    </script>
+</body>
+</html>
